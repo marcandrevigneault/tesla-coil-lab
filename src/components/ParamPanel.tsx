@@ -1,5 +1,8 @@
+import { useState } from "react";
 import { useStore } from "../store";
 import { computeDerived, fmt, skinDepth, RESISTIVITY } from "../physics/formulas";
+import { InfoButton, TipBox } from "./InfoTip";
+import { TIPS } from "../tips";
 import type { Material, Params } from "../types";
 
 const MATERIALS: Material[] = ["copper", "aluminum", "silver"];
@@ -91,16 +94,21 @@ function Hint({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, tips, children }: { title: string; tips?: string[]; children: React.ReactNode }) {
+  const [showTips, setShowTips] = useState(false);
   return (
     <details open className="border-b" style={{ borderColor: "var(--line)" }}>
       <summary
-        className="section-title cursor-pointer select-none py-2.5 px-1 list-none"
+        className="section-title cursor-pointer select-none py-2.5 px-1 list-none flex items-center gap-1.5"
         style={{ color: "var(--copper)" }}
       >
         {title}
+        {tips && <InfoButton active={showTips} onClick={() => setShowTips((v) => !v)} />}
       </summary>
-      <div className="pb-3 px-1">{children}</div>
+      <div className="pb-3 px-1">
+        {tips && showTips && <TipBox tips={tips} />}
+        {children}
+      </div>
     </details>
   );
 }
@@ -183,7 +191,7 @@ export default function ParamPanel() {
             Parameters
           </h2>
 
-          <Section title="Secondary coil">
+          <Section title="Secondary coil" tips={TIPS.secondary}>
             <Num label="Turns N" value={params.secondary.turns} onChange={(v) => s({ turns: Math.round(v) })} min={50} lockKey="secondary.turns" />
             <Num label="Winding height" unit="cm" scale={100} step={1} value={params.secondary.height} onChange={(v) => s({ height: v })} min={5} lockKey="secondary.height" />
             <Num label="Form radius" unit="cm" scale={100} step={0.5} value={params.secondary.radius} onChange={(v) => s({ radius: v })} min={1} lockKey="secondary.radius" />
@@ -191,7 +199,7 @@ export default function ParamPanel() {
             <MaterialSelect value={params.secondary.material} onChange={(m) => s({ material: m })} />
           </Section>
 
-          <Section title="Topload">
+          <Section title="Topload" tips={TIPS.topload}>
             <Select label="Shape" value={params.topload.shape}
               options={[["toroid", "toroid"], ["sphere", "sphere"]]}
               onChange={(shape) => t({ shape })} />
@@ -215,7 +223,7 @@ export default function ParamPanel() {
             <MaterialSelect value={params.topload.material} onChange={(m) => t({ material: m })} />
           </Section>
 
-          <Section title="Primary coil">
+          <Section title="Primary coil" tips={TIPS.primary}>
             <Select label="Geometry" value={params.primary.type}
               options={[["spiral", "flat spiral"], ["cone", "conical"], ["helix", "helical"]]}
               onChange={(type) => pr({ type })} />
@@ -225,6 +233,7 @@ export default function ParamPanel() {
             <Num label="Turns" value={params.primary.turns} onChange={(v) => pr({ turns: Math.round(v) })} min={2} lockKey="primary.turns" />
             <Num label="Inner radius" unit="cm" scale={100} value={params.primary.innerRadius} onChange={(v) => pr({ innerRadius: v })} min={2} lockKey="primary.innerRadius" />
             <Num label="Pitch" unit="mm" scale={1000} value={params.primary.pitch} onChange={(v) => pr({ pitch: v })} min={1} lockKey="primary.pitch" />
+            <Num label="Base height" unit="cm" scale={100} step={0.5} value={params.primary.baseHeight} onChange={(v) => pr({ baseHeight: v })} lockKey="primary.baseHeight" />
             <Select label="Conductor" value={params.primary.conductorStyle}
               options={[["tube", "copper tubing (hollow)"], ["wire", "solid wire"]]}
               onChange={(conductorStyle) => pr({ conductorStyle })} />
@@ -241,7 +250,7 @@ export default function ParamPanel() {
             <MaterialSelect value={params.primary.material} onChange={(m) => pr({ material: m })} />
           </Section>
 
-          <Section title="Drive · power">
+          <Section title="Drive · power" tips={TIPS.drive}>
             <Select label="Topology" value={params.drive.topology}
               options={[["spark-gap", "spark gap (SGTC)"], ["solid-state", "solid-state (DRSSTC)"]]}
               onChange={(topology) => dr({ topology })} />
@@ -272,7 +281,6 @@ export default function ParamPanel() {
               </>
             )}
             <Num label="Tank capacitance" unit="nF" scale={1e9} step={0.5} value={params.drive.tankCapacitance} onChange={(v) => dr({ tankCapacitance: v })} min={0.5} lockKey="drive.tankCapacitance" />
-            <Num label="Coupling k" step={0.01} value={params.drive.coupling} onChange={(v) => dr({ coupling: Math.min(Math.max(v, 0.01), 0.6) })} lockKey="drive.coupling" />
           </Section>
 
           <div className="mt-3 p-2.5 rounded-lg" style={{ background: "var(--panel-2)" }}>
@@ -287,7 +295,10 @@ export default function ParamPanel() {
                   ["f primary", fmt.si(d.fPrimary, "Hz")],
                   ["f secondary", fmt.si(d.fSecondary, "Hz")],
                   ["R sec (AC)", fmt.si(d.Rs, "Ω")],
+                  ["R prim (AC)", fmt.si(d.Rp, "Ω")],
                   ["Mutual M", fmt.si(d.M, "H")],
+                  ["Coupling k (geom)", d.k.toFixed(3)],
+                  ["Wire ℓ vs λ/4", `${d.wireLength.toFixed(0)} / ${(299792458 / d.fSecondary / 4).toFixed(0)} m`],
                   ["Topload mass", d.toploadMassKg >= 1 ? `${d.toploadMassKg.toFixed(2)} kg` : `${(d.toploadMassKg * 1000).toFixed(0)} g`],
                 ].map(([k, v]) => (
                   <tr key={k as string}>

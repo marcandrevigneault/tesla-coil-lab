@@ -33,8 +33,8 @@ export function activeOptVars(p: Params, locks: Record<string, boolean>): OptVar
     { key: "primary.innerRadius", group: "primary", field: "innerRadius", min: 0.06, max: 0.3 },
     { key: "primary.pitch", group: "primary", field: "pitch", min: 0.004, max: 0.03 },
     { key: "primary.conductorDiameter", group: "primary", field: "conductorDiameter", min: 0.003, max: 0.012 },
+    { key: "primary.baseHeight", group: "primary", field: "baseHeight", min: -0.05, max: 0.25 },
     { key: "drive.tankCapacitance", group: "drive", field: "tankCapacitance", min: 2e-9, max: 100e-9 },
-    { key: "drive.coupling", group: "drive", field: "coupling", min: 0.05, max: 0.3 },
   ];
 
   if (p.topload.shape === "toroid") {
@@ -86,7 +86,9 @@ function enforceConstraints(p: Params): void {
 export function objective(p: Params): number {
   enforceConstraints(p);
   const d = computeDerived(p);
-  if (!isFinite(d.fPrimary) || !isFinite(d.fSecondary) || p.drive.coupling >= 0.6) return -Infinity;
+  // Overcoupled coils flash over between windings long before the model's
+  // k → 1 limit; treat k ≥ 0.35 as a build failure, not a candidate.
+  if (!isFinite(d.fPrimary) || !isFinite(d.fSecondary) || d.k >= 0.35) return -Infinity;
   const quick =
     p.drive.topology === "solid-state"
       ? { ptsPerPeriod: 80, maxSteps: 60_000, durationOverride: Math.min(p.drive.onTime + 150e-6, 1 / p.drive.interrupterHz) }

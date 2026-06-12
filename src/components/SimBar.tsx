@@ -105,7 +105,7 @@ export default function SimBar() {
           </div>
         )}
         <div className="mono text-[11.5px] ml-auto" style={{ color: "var(--muted)" }}>
-          f₁ {fmt.si(d.fPrimary, "Hz")} · f₂ {fmt.si(d.fSecondary, "Hz")} · k {params.drive.coupling}
+          f₁ {fmt.si(d.fPrimary, "Hz")} · f₂ {fmt.si(d.fSecondary, "Hz")} · k {d.k.toFixed(3)}
           {solidState && <> · int {params.drive.interrupterHz.toFixed(0)} Hz</>}
         </div>
       </div>

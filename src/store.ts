@@ -11,7 +11,7 @@ export const DEFAULT_PARAMS: Params = {
     majorDiameter: 0.3, minorDiameter: 0.08, sphereDiameter: 0.2, material: "aluminum",
   },
   primary: {
-    type: "spiral", turns: 10, innerRadius: 0.12, pitch: 0.011, coneAngle: 30,
+    type: "spiral", turns: 10, innerRadius: 0.12, pitch: 0.011, coneAngle: 30, baseHeight: 0.02,
     conductorDiameter: 0.006, conductorStyle: "tube", tubeWall: 0.001, material: "copper",
   },
   drive: {
@@ -19,7 +19,7 @@ export const DEFAULT_PARAMS: Params = {
     supplyVoltage: 5_000, supplyCurrent: 0.03, // Marc-André's 5 kV / 30 mA supply
     firingVoltage: 5_000, gapResistance: 1.5, duration: 120e-6,
     busVoltage: 340, onTime: 100e-6, interrupterHz: 220,
-    tankCapacitance: 10e-9, coupling: 0.12,
+    tankCapacitance: 10e-9,
   },
 };
 

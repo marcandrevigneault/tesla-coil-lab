@@ -56,7 +56,7 @@ function integrate(p: Params, d: Derived, drive: Drive, q: SimQuality): SimResul
 
   // Time step: resolve the faster normal mode ω+ = ω0/√(1−k).
   const pts = q.ptsPerPeriod ?? 300;
-  const fMax = Math.max(d.fPrimary, d.fSecondary) / Math.sqrt(1 - p.drive.coupling);
+  const fMax = Math.max(d.fPrimary, d.fSecondary) / Math.sqrt(1 - Math.min(d.k, 0.95));
   const dt = 1 / (fMax * pts);
   const steps = Math.min(Math.ceil(drive.duration / dt), q.maxSteps ?? 400_000);
 

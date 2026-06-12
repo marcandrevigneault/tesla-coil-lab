@@ -30,6 +30,7 @@ export interface Params {
     innerRadius: number; // m
     pitch: number; // m, turn-to-turn spacing (radial for spiral, axial for helix, along the slope for cone)
     coneAngle: number; // degrees from horizontal, used when type === "cone"
+    baseHeight: number; // m, vertical position of the first turn relative to the secondary's bottom
     conductorDiameter: number; // m
     conductorStyle: ConductorStyle; // tube = hollow copper tubing
     tubeWall: number; // m, tube wall thickness when style === "tube"
@@ -49,7 +50,6 @@ export interface Params {
     interrupterHz: number; // Hz, burst repetition rate == musical pitch
     // shared
     tankCapacitance: number; // F
-    coupling: number; // k, 0..~0.3
   };
 }
 
@@ -61,7 +61,8 @@ export interface Derived {
   CtopPF: number;
   Rp: number; // ohm
   Rs: number; // ohm (AC, skin-corrected)
-  M: number; // H
+  M: number; // H, computed from the actual coil geometry (filament sum)
+  k: number; // coupling M/√(LpLs) — derived, not an input
   fPrimary: number; // Hz
   fSecondary: number; // Hz
   wireLength: number; // m

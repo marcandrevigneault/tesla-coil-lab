@@ -98,6 +98,61 @@ export function sphereCapacitance(diameterM: number): number {
   return 4 * Math.PI * EPS0 * (diameterM / 2);
 }
 
+/* ---------- geometric coupling ---------- */
+
+/** Complete elliptic integrals K(m), E(m) by the AGM, m = modulus². */
+function ellipticKE(m: number): [number, number] {
+  let a = 1, b = Math.sqrt(1 - m), c = Math.sqrt(m);
+  let sum = c * c / 2, pow = 0.5;
+  while (c > 1e-12) {
+    const an = (a + b) / 2;
+    b = Math.sqrt(a * b);
+    c = (a - b) / 2;
+    a = an;
+    pow *= 2;
+    sum += pow * c * c;
+  }
+  const K = Math.PI / (2 * a);
+  return [K, K * (1 - sum)];
+}
+
+/** Mutual inductance of two coaxial circular loops (Maxwell's formula):
+ *  radii a, b, axial separation z. */
+export function loopMutual(a: number, b: number, z: number): number {
+  const m = (4 * a * b) / ((a + b) ** 2 + z * z); // modulus²
+  if (m < 1e-12) return 0;
+  const kMod = Math.sqrt(m);
+  const [K, E] = ellipticKE(m);
+  return MU0 * Math.sqrt(a * b) * ((2 / kMod - kMod) * K - (2 / kMod) * E);
+}
+
+/** Total primary↔secondary mutual inductance: each primary turn is one
+ *  filament placed by its geometry (incl. base height); the secondary's
+ *  many turns are collapsed into ~40 weighted slices. k = M/√(LpLs) then
+ *  reacts to cone angle, radii, and the primary's vertical position —
+ *  raise the primary and watch the coupling climb, like on a real coil. */
+export function mutualInductance(p: Params): number {
+  const s = p.secondary, pr = p.primary;
+  const SLICES = 40;
+  const wSec = s.turns / SLICES;
+  const th = (pr.coneAngle * Math.PI) / 180;
+
+  let M = 0;
+  for (let j = 0; j < pr.turns; j++) {
+    const sj = pr.pitch * (j + 0.5);
+    let rP: number, yP: number;
+    if (pr.type === "spiral") { rP = pr.innerRadius + sj; yP = pr.baseHeight; }
+    else if (pr.type === "helix") { rP = pr.innerRadius; yP = pr.baseHeight + sj; }
+    else { rP = pr.innerRadius + sj * Math.cos(th); yP = pr.baseHeight + sj * Math.sin(th); }
+
+    for (let i = 0; i < SLICES; i++) {
+      const ySec = ((i + 0.5) / SLICES) * s.height;
+      M += wSec * loopMutual(rP, s.radius, ySec - yP);
+    }
+  }
+  return M;
+}
+
 export function toploadMass(p: Params["topload"]): number {
   const rho = DENSITY[p.material];
   if (p.shape === "sphere") {
@@ -208,7 +263,11 @@ export function computeDerived(p: Params): Derived {
       pr.tubeWall
     );
 
-  const M = p.drive.coupling * Math.sqrt(Lp * Ls);
+  // Coupling from the real geometry. Clamped just shy of the model's k → 1
+  // singularity; real coils sit nowhere near it.
+  const Mgeo = mutualInductance(p);
+  const k = Math.min(Mgeo / Math.sqrt(Lp * Ls), 0.55);
+  const M = k * Math.sqrt(Lp * Ls);
 
   const supplyPower = p.drive.supplyVoltage * p.drive.supplyCurrent;
   const bangEnergy = 0.5 * p.drive.tankCapacitance * p.drive.firingVoltage ** 2;
@@ -218,7 +277,7 @@ export function computeDerived(p: Params): Derived {
     Lp, Ls, Cs,
     CselfPF: Cself * 1e12,
     CtopPF: Ctop * 1e12,
-    Rp, Rs, M, fPrimary, fSecondary, wireLength,
+    Rp, Rs, M, k, fPrimary, fSecondary, wireLength,
     toploadMassKg: toploadMass(p.topload),
     supplyPower,
     maxBps,

@@ -115,7 +115,7 @@ function Primary() {
   }, [p.type, p.innerRadius, p.pitch, p.turns, p.conductorDiameter, p.coneAngle]);
 
   return (
-    <mesh geometry={geom} position={[0, 0.02, 0]} {...handlers}>
+    <mesh geometry={geom} position={[0, p.baseHeight, 0]} {...handlers}>
       <Glow state={state} color={MATERIAL_COLOR[p.material]} />
     </mesh>
   );

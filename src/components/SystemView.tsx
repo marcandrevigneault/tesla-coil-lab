@@ -122,7 +122,7 @@ export default function SystemView() {
         <Label x={672} y={24} title={`topload${params.topload.construction === "hollow" ? " (hollow)" : ""}`} value={fmt.si(d.CtopPF * 1e-12, "F")} />
         <Label x={736} y={156} anchor="start" title="Cs total" value={fmt.si(d.Cs, "F")} />
         <text x={456} y={250} textAnchor="middle" fontFamily="JetBrains Mono" fontSize="11" fill="var(--corona)">
-          k = {params.drive.coupling}
+          k = {d.k.toFixed(3)} (geometric)
         </text>
 
         {/* resonance summary */}

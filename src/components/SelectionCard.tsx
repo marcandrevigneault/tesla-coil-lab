@@ -1,4 +1,7 @@
+import { useState } from "react";
 import { useStore } from "../store";
+import { InfoButton, TipBox } from "./InfoTip";
+import { TIPS } from "../tips";
 import type { Material } from "../types";
 
 const MATERIALS: Material[] = ["copper", "aluminum", "silver"];
@@ -14,6 +17,7 @@ export default function SelectionCard() {
   const params = useStore((s) => s.params);
   const setParam = useStore((s) => s.setParam);
   const setSelected = useStore((s) => s.setSelected);
+  const [showTips, setShowTips] = useState(false);
   if (!selected) return null;
 
   const material = params[selected].material;
@@ -23,10 +27,14 @@ export default function SelectionCard() {
       <div className="flex items-center justify-between mb-2">
         <div>
           <div className="section-title" style={{ color: "var(--corona)" }}>selected</div>
-          <div className="font-bold text-[14px]">{TITLES[selected]}</div>
+          <div className="font-bold text-[14px] flex items-center gap-1.5">
+            {TITLES[selected]}
+            <InfoButton active={showTips} onClick={() => setShowTips((v) => !v)} />
+          </div>
         </div>
         <button className="btn btn-ghost !px-2 !py-0.5 mono" onClick={() => setSelected(null)}>✕</button>
       </div>
+      {showTips && <TipBox tips={TIPS[selected]} />}
 
       {selected === "topload" && (
         <>

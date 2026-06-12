@@ -146,11 +146,18 @@ function OptimizeBox() {
             <div className="opt-fill" style={{ width: `${optInfo ? (100 * optInfo.iter) / optInfo.total : 0}%` }} />
           </div>
           <div className="mono text-[11px] mt-1.5 flex justify-between" style={{ color: "var(--muted)" }}>
-            <span>{optInfo?.iter}/{optInfo?.total}</span>
+            <span>
+              {optInfo?.iter}/{optInfo?.total} · cycle{" "}
+              {Math.min(Math.floor((optInfo?.iter ?? 0) / ((optInfo?.total ?? 1) / 3)) + 1, 3)}/3
+            </span>
             <span style={{ color: "var(--corona)" }}>
               best {fmtScore(optInfo?.best ?? 0, optInfo?.objective ?? "voltage")}
             </span>
             <span>+{optInfo?.improved}</span>
+          </div>
+          <div className="mono text-[11px] mt-0.5" style={{ color: "var(--muted)" }}>
+            walker now at {fmtScore(optInfo?.current ?? 0, optInfo?.objective ?? "voltage")}
+            {(optInfo?.current ?? 0) < (optInfo?.best ?? 0) * 0.98 && " — exploring downhill"}
           </div>
           <button className="btn w-full mt-2" onClick={stopOptimize}>Stop</button>
         </>

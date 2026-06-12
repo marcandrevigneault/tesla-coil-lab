@@ -95,6 +95,7 @@ export interface OptInfo {
   total: number;
   best: number; // best score in the objective's units (V, J, or ratio)
   start: number;
+  current: number; // the Metropolis walker's score right now (may be worse — that's exploration)
   improved: number; // count of new bests
   varCount: number;
   objective: OptObjective;

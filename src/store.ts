@@ -95,7 +95,7 @@ export const useStore = create<Store>((set, get) => ({
     if (optimizing) return;
     const varCount = activeOptVars(get().params, locks).length + activeCatVars(locks).length;
     if (varCount === 0) {
-      set({ optInfo: { iter: 0, total: 0, best: 0, start: 0, improved: 0, varCount: 0, objective } });
+      set({ optInfo: { iter: 0, total: 0, best: 0, start: 0, current: 0, improved: 0, varCount: 0, objective } });
       return;
     }
 
@@ -108,7 +108,7 @@ export const useStore = create<Store>((set, get) => ({
     let improved = 0;
     set({
       optimizing: true,
-      optInfo: { iter: 0, total: OPT_ITERS, best: bestScore, start, improved, varCount, objective },
+      optInfo: { iter: 0, total: OPT_ITERS, best: bestScore, start, current: curScore, improved, varCount, objective },
     });
 
     for (let i = 0; i < OPT_ITERS; i++) {
@@ -127,7 +127,7 @@ export const useStore = create<Store>((set, get) => ({
         // Live-apply new bests so the 3D model morphs as the search runs.
         set({ params: JSON.parse(JSON.stringify(best)) });
       }
-      set({ optInfo: { iter: i + 1, total: OPT_ITERS, best: bestScore, start, improved, varCount, objective } });
+      set({ optInfo: { iter: i + 1, total: OPT_ITERS, best: bestScore, start, current: curScore, improved, varCount, objective } });
       if (i % 4 === 3) await new Promise((r) => setTimeout(r, 0)); // keep the UI alive
     }
 

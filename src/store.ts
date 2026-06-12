@@ -2,7 +2,10 @@ import { create } from "zustand";
 import type { ComponentId, OptInfo, OptObjective, Params, SimResult, ViewMode } from "./types";
 import { computeDerived } from "./physics/formulas";
 import { simulate } from "./physics/simulate";
-import { OPT_ITERS, accepts, activeCatVars, activeOptVars, evaluate, perturb, temperature } from "./physics/optimize";
+import {
+  OPT_ITERS, OPT_REHEATS, SWEEP_SAMPLES,
+  accepts, activeCatVars, activeOptVars, evaluate, perturb, randomSample, temperature,
+} from "./physics/optimize";
 
 export const DEFAULT_PARAMS: Params = {
   secondary: { turns: 1000, height: 0.5, radius: 0.05, wireDiameter: 0.0004, material: "copper" },
@@ -12,7 +15,7 @@ export const DEFAULT_PARAMS: Params = {
   },
   primary: {
     type: "spiral", turns: 10, innerRadius: 0.12, pitch: 0.011, coneAngle: 30, baseHeight: 0.02,
-    conductorDiameter: 0.006, conductorStyle: "tube", tubeWall: 0.001, material: "copper",
+    conductorDiameter: 0.006, conductorStyle: "tube", tubeWall: 0.001, insulation: "air", material: "copper",
   },
   drive: {
     topology: "spark-gap",
@@ -95,22 +98,45 @@ export const useStore = create<Store>((set, get) => ({
     if (optimizing) return;
     const varCount = activeOptVars(get().params, locks).length + activeCatVars(locks).length;
     if (varCount === 0) {
-      set({ optInfo: { iter: 0, total: 0, best: 0, start: 0, current: 0, improved: 0, varCount: 0, objective } });
+      set({ optInfo: { iter: 0, total: 0, best: 0, start: 0, current: 0, improved: 0, varCount: 0, objective, stage: "—" } });
       return;
     }
 
-    // Metropolis walk: `current` may wander downhill while hot (that's the
-    // point), `best` only ever improves and is what gets applied.
+    const TOTAL = SWEEP_SAMPLES + OPT_ITERS;
     let current: Params = JSON.parse(JSON.stringify(get().params));
     let curScore = evaluate(current, objective);
     let best = current, bestScore = curScore;
     const start = curScore;
     let improved = 0;
-    set({
-      optimizing: true,
-      optInfo: { iter: 0, total: OPT_ITERS, best: bestScore, start, current: curScore, improved, varCount, objective },
-    });
+    const report = (iter: number, stage: string) =>
+      set({ optInfo: { iter, total: TOTAL, best: bestScore, start, current: curScore, improved, varCount, objective, stage } });
 
+    set({ optimizing: true });
+    report(0, "global sweep");
+
+    // Phase 1 — coarse scan of the entire unlocked space ("test everything",
+    // at the resolution a few seconds buys). Independent uniform samples, so
+    // no basin can hide from it the way it could from a local walker.
+    for (let i = 0; i < SWEEP_SAMPLES; i++) {
+      if (!get().optimizing) break;
+      const cand = randomSample(current, locks);
+      const score = evaluate(cand, objective);
+      curScore = score;
+      if (score > bestScore) {
+        best = cand;
+        bestScore = score;
+        improved++;
+        // Live-apply new bests so the 3D model morphs as the search runs.
+        set({ params: JSON.parse(JSON.stringify(best)) });
+      }
+      report(i + 1, "global sweep");
+      if (i % 4 === 3) await new Promise((r) => setTimeout(r, 0)); // keep the UI alive
+    }
+
+    // Phase 2 — Metropolis refinement around the sweep's winner. `current`
+    // may wander downhill while hot (that's the point); `best` only improves.
+    current = JSON.parse(JSON.stringify(best));
+    curScore = bestScore;
     for (let i = 0; i < OPT_ITERS; i++) {
       if (!get().optimizing) break;
       const temp = temperature(i);
@@ -124,11 +150,11 @@ export const useStore = create<Store>((set, get) => ({
         best = cand;
         bestScore = score;
         improved++;
-        // Live-apply new bests so the 3D model morphs as the search runs.
         set({ params: JSON.parse(JSON.stringify(best)) });
       }
-      set({ optInfo: { iter: i + 1, total: OPT_ITERS, best: bestScore, start, current: curScore, improved, varCount, objective } });
-      if (i % 4 === 3) await new Promise((r) => setTimeout(r, 0)); // keep the UI alive
+      const cycle = Math.min(Math.floor(i / (OPT_ITERS / OPT_REHEATS)) + 1, OPT_REHEATS);
+      report(SWEEP_SAMPLES + i + 1, `refine ${cycle}/${OPT_REHEATS}`);
+      if (i % 4 === 3) await new Promise((r) => setTimeout(r, 0));
     }
 
     set({ params: best, optimizing: false });

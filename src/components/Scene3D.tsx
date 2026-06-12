@@ -141,10 +141,34 @@ function Primary() {
     return new THREE.TubeGeometry(curve, p.turns * 48, p.conductorDiameter / 2, 10, false);
   }, [p.type, p.innerRadius, p.pitch, p.turns, p.conductorDiameter, p.coneAngle]);
 
+  // Vertical extent of the winding, for sizing the insulation barrier.
+  const extent =
+    p.type === "helix"
+      ? p.pitch * p.turns
+      : p.type === "cone"
+        ? p.pitch * p.turns * Math.sin((p.coneAngle * Math.PI) / 180)
+        : 0;
+  const sleeveR = (sec.radius + p.innerRadius) / 2;
+
   return (
-    <mesh geometry={geom} position={[0, p.baseHeight, 0]} {...handlers}>
-      <Glow state={state} color={MATERIAL_COLOR[p.material]} />
-    </mesh>
+    <group>
+      <mesh geometry={geom} position={[0, p.baseHeight, 0]} {...handlers}>
+        <Glow state={state} color={MATERIAL_COLOR[p.material]} />
+      </mesh>
+      {p.insulation === "ptfe" && (
+        <mesh position={[0, p.baseHeight + extent / 2, 0]} raycast={() => null}>
+          <cylinderGeometry args={[sleeveR, sleeveR, extent + 0.1, 48, 1, true]} />
+          <meshStandardMaterial
+            color="#dde4ea"
+            transparent
+            opacity={0.16}
+            side={THREE.DoubleSide}
+            depthWrite={false}
+            roughness={0.35}
+          />
+        </mesh>
+      )}
+    </group>
   );
 }
 

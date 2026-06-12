@@ -1,4 +1,4 @@
-import type { Derived } from "../types";
+import type { Derived, Params } from "../types";
 
 /**
  * Distributed ladder model of the secondary: N series-L segments with shunt
@@ -124,6 +124,33 @@ export function secondaryLadder(d: Derived): LadderResult {
   if (cache.size > 200) cache.clear();
   cache.set(key, result);
   return result;
+}
+
+/** Primary-strike risk: the ladder profile gives the secondary's local
+ *  voltage at every primary turn's actual height; divide by the radial gap
+ *  to that turn and compare against what the gap medium can hold off.
+ *  Design limits (conservative, creepage included): air ~15 kV/cm; a PTFE
+ *  barrier tube with proper creepage path ~50 kV/cm. This is why real coils
+ *  put the primary at the BASE (V ≈ 0 there) and why a mid-height helix
+ *  needs magnifier-style insulation engineering. */
+export function strikeRisk(p: Params, d: Derived, peakVs: number) {
+  const { profile } = secondaryLadder(d);
+  const s = p.secondary, pr = p.primary;
+  const th = (pr.coneAngle * Math.PI) / 180;
+  let worst = 0;
+  for (let j = 0; j < pr.turns; j++) {
+    const sj = pr.pitch * (j + 0.5);
+    let r: number, y: number;
+    if (pr.type === "spiral") { r = pr.innerRadius + sj; y = pr.baseHeight; }
+    else if (pr.type === "helix") { r = pr.innerRadius; y = pr.baseHeight + sj; }
+    else { r = pr.innerRadius + sj * Math.cos(th); y = pr.baseHeight + sj * Math.sin(th); }
+    const gap = r - pr.conductorDiameter / 2 - s.radius;
+    if (gap < 0.005) return { gradientVm: Infinity, limitVm: 0, ratio: Infinity };
+    const vLocal = profileVoltageAt(profile, y / s.height) * peakVs;
+    worst = Math.max(worst, vLocal / gap);
+  }
+  const limitVm = pr.insulation === "ptfe" ? 5.0e6 : 1.5e6;
+  return { gradientVm: worst, limitVm, ratio: worst / limitVm };
 }
 
 /** Linear interpolation of the mode voltage at height fraction t ∈ [0,1]. */

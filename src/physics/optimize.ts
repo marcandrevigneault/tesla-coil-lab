@@ -1,6 +1,7 @@
 import type { OptObjective, Params } from "../types";
 import { computeDerived } from "./formulas";
 import { simulate } from "./simulate";
+import { strikeRisk } from "./ladder";
 
 /**
  * Parameter search: simulated annealing over every unlocked numeric variable.
@@ -112,6 +113,8 @@ function enforceConstraints(p: Params): void {
   p.drive.firingVoltage = Math.min(p.drive.firingVoltage, p.drive.supplyVoltage);
   // Toroid tube can't be fatter than the toroid itself.
   p.topload.minorDiameter = Math.min(p.topload.minorDiameter, 0.45 * p.topload.majorDiameter);
+  // The primary physically surrounds the secondary form.
+  p.primary.innerRadius = Math.max(p.primary.innerRadius, p.secondary.radius + 0.015);
 }
 
 export function evaluate(p: Params, objective: OptObjective): number {
@@ -125,11 +128,20 @@ export function evaluate(p: Params, objective: OptObjective): number {
       ? { ptsPerPeriod: 80, maxSteps: 60_000, durationOverride: Math.min(p.drive.onTime + 150e-6, 1 / p.drive.interrupterHz) }
       : { ptsPerPeriod: 90, maxSteps: 60_000, durationOverride: Math.min(p.drive.duration, 80e-6) };
   const Vs = simulate(p, d, quick).peakVs;
-  if (objective === "voltage") return Vs;
+
+  // Primary-strike feasibility: candidates whose own peak voltage would arc
+  // from the secondary to the primary get squashed in proportion to how far
+  // past the insulation limit they are. A mid-height helix is only allowed
+  // to win if the chosen insulation can actually hold it off.
+  const risk = strikeRisk(p, d, Vs);
+  if (!isFinite(risk.ratio)) return -Infinity;
+  const feasibility = risk.ratio > 1 ? (1 / risk.ratio) ** 3 : 1;
+
+  if (objective === "voltage") return Vs * feasibility;
   const toploadEnergy = 0.5 * d.Cs * Vs * Vs;
-  if (objective === "energy") return toploadEnergy;
+  if (objective === "energy") return toploadEnergy * feasibility;
   const v0 = p.drive.topology === "spark-gap" ? p.drive.firingVoltage : p.drive.busVoltage;
-  return toploadEnergy / (0.5 * p.drive.tankCapacitance * v0 * v0);
+  return (toploadEnergy / (0.5 * p.drive.tankCapacitance * v0 * v0)) * feasibility;
 }
 
 // Box–Muller, good enough for a perturbation kernel.
@@ -164,14 +176,30 @@ export function perturb(p: Params, locks: Record<string, boolean>, temp: number)
   return out;
 }
 
-export const OPT_ITERS = 300;
-export const OPT_REHEATS = 3; // temperature sawtooth cycles per run
+export const SWEEP_SAMPLES = 120; // phase 1: coarse uniform scan of the whole unlocked space
+export const OPT_ITERS = 180; // phase 2: annealed refinement of the best find
+export const OPT_REHEATS = 2; // temperature sawtooth cycles in the refine phase
 
 /** Annealing temperature with periodic reheating. */
 export function temperature(iter: number): number {
   const cycle = OPT_ITERS / OPT_REHEATS;
   const tProg = (iter % cycle) / cycle;
   return 0.45 * (1 - tProg) + 0.04;
+}
+
+/** A uniform random point in the unlocked design space — the "test
+ *  everything (coarsely)" phase. Locked values stay exactly as set. */
+export function randomSample(p: Params, locks: Record<string, boolean>): Params {
+  const out = clone(p);
+  for (const cv of activeCatVars(locks)) {
+    const choices = cv.choices;
+    (out[cv.group] as any)[cv.field] = choices[Math.floor(Math.random() * choices.length)];
+  }
+  for (const v of activeOptVars(out, locks)) {
+    setVar(out, v, v.min + Math.random() * (v.max - v.min));
+  }
+  enforceConstraints(out);
+  return out;
 }
 
 /** Metropolis: always take improvements; take regressions with a

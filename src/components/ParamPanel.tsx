@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useStore } from "../store";
 import { computeDerived, fmt, skinDepth, RESISTIVITY } from "../physics/formulas";
-import { secondaryLadder } from "../physics/ladder";
+import { secondaryLadder, strikeRisk } from "../physics/ladder";
 import { InfoButton, TipBox } from "./InfoTip";
 import { TIPS } from "../tips";
 import type { Material, Params } from "../types";
@@ -136,9 +136,10 @@ function OptimizeBox() {
         options={[["voltage", "peak voltage V̂"], ["energy", "arc energy ½CsV̂²"], ["efficiency", "transfer η"]]}
         onChange={setOptObjective} />
       <Hint>
-        {OBJECTIVE_HINT[optObjective]} Anneals every <b>unlocked</b> variable ({lockedCount} locked),
-        accepting bad moves while hot so reruns can escape the previous optimum. Firing voltage stays
-        capped at the {fmt.si(params.drive.supplyVoltage, "V")} supply.
+        {OBJECTIVE_HINT[optObjective]} Phase 1 sweeps the whole unlocked space coarsely
+        ({lockedCount} locked); phase 2 anneals the best find. Designs that would arc to the
+        primary are penalized unless the insulation holds. Firing voltage stays capped at the
+        {" "}{fmt.si(params.drive.supplyVoltage, "V")} supply.
       </Hint>
       {optimizing ? (
         <>
@@ -146,10 +147,7 @@ function OptimizeBox() {
             <div className="opt-fill" style={{ width: `${optInfo ? (100 * optInfo.iter) / optInfo.total : 0}%` }} />
           </div>
           <div className="mono text-[11px] mt-1.5 flex justify-between" style={{ color: "var(--muted)" }}>
-            <span>
-              {optInfo?.iter}/{optInfo?.total} · cycle{" "}
-              {Math.min(Math.floor((optInfo?.iter ?? 0) / ((optInfo?.total ?? 1) / 3)) + 1, 3)}/3
-            </span>
+            <span>{optInfo?.iter}/{optInfo?.total} · {optInfo?.stage}</span>
             <span style={{ color: "var(--corona)" }}>
               best {fmtScore(optInfo?.best ?? 0, optInfo?.objective ?? "voltage")}
             </span>
@@ -190,7 +188,14 @@ export default function ParamPanel() {
   const reset = useStore((s) => s.reset);
   const open = useStore((s) => s.leftOpen);
   const toggle = useStore((s) => s.toggleLeft);
+  const sim = useStore((s) => s.sim);
   const d = computeDerived(params);
+
+  // Reference voltage for the strike check: last sim peak, or the energy
+  // bound V0·√(Cp/Cs) before any sim has run.
+  const vRef =
+    sim?.peakVs ?? params.drive.firingVoltage * Math.sqrt(params.drive.tankCapacitance / d.Cs);
+  const risk = strikeRisk(params, d, vRef);
 
   const set = <K extends keyof Params>(g: K) => (patch: Partial<Params[K]>) => setParam(g, patch);
   const s = set("secondary"), t = set("topload"), pr = set("primary"), dr = set("drive");
@@ -274,6 +279,9 @@ export default function ParamPanel() {
                 </Hint>
               </>
             )}
+            <Select label="Insulation to sec." value={params.primary.insulation}
+              options={[["air", "air gap only"], ["ptfe", "PTFE barrier"]]}
+              onChange={(insulation) => pr({ insulation })} />
             <MaterialSelect value={params.primary.material} onChange={(m) => pr({ material: m })} />
           </Section>
 
@@ -343,6 +351,15 @@ export default function ParamPanel() {
               {Math.abs(d.fPrimary / d.fSecondary - 1) < 0.05
                 ? "✓ resonators tuned"
                 : `detuned: f₁/f₂ = ${(d.fPrimary / d.fSecondary).toFixed(2)}`}
+            </div>
+            <div
+              className="mt-1 text-[11px]"
+              style={{ color: risk.ratio < 1 ? "var(--arc)" : "var(--warn)" }}
+              title="Secondary's local voltage (ladder profile) at each primary turn ÷ radial gap, vs what the insulation holds off (~15 kV/cm air, ~50 kV/cm PTFE barrier)."
+            >
+              {risk.ratio < 1
+                ? `✓ primary strike margin ×${(1 / Math.max(risk.ratio, 1e-3)).toFixed(1)}`
+                : `⚠ primary strike risk ×${risk.ratio.toFixed(1)} — widen gap, lower primary, or add a barrier`}
             </div>
           </div>
 

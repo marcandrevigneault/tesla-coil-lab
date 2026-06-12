@@ -4,6 +4,7 @@ export type Construction = "solid" | "hollow";
 export type ConductorStyle = "wire" | "tube";
 export type PrimaryType = "spiral" | "helix" | "cone";
 export type Topology = "spark-gap" | "solid-state";
+export type Insulation = "air" | "ptfe";
 export type ComponentId = "primary" | "secondary" | "topload";
 export type ViewMode = "3d" | "system";
 
@@ -34,6 +35,7 @@ export interface Params {
     conductorDiameter: number; // m
     conductorStyle: ConductorStyle; // tube = hollow copper tubing
     tubeWall: number; // m, tube wall thickness when style === "tube"
+    insulation: Insulation; // what stands between primary and secondary
     material: Material;
   };
   drive: {
@@ -99,4 +101,5 @@ export interface OptInfo {
   improved: number; // count of new bests
   varCount: number;
   objective: OptObjective;
+  stage: string; // "global sweep" | "refine 1/2" | ...
 }

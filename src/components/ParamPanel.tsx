@@ -66,9 +66,9 @@ function Num({
 }
 
 function Select<T extends string>({
-  label, value, options, onChange,
+  label, value, options, onChange, lockKey,
 }: {
-  label: string; value: T; options: [T, string][]; onChange: (v: T) => void;
+  label: string; value: T; options: [T, string][]; onChange: (v: T) => void; lockKey?: string;
 }) {
   return (
     <div className="field">
@@ -78,7 +78,7 @@ function Select<T extends string>({
           <option key={v} value={v}>{text}</option>
         ))}
       </select>
-      <span />
+      <LockBtn k={lockKey} />
     </div>
   );
 }
@@ -222,7 +222,7 @@ export default function ParamPanel() {
           <Section title="Topload" tips={TIPS.topload}>
             <Select label="Shape" value={params.topload.shape}
               options={[["toroid", "toroid"], ["sphere", "sphere"]]}
-              onChange={(shape) => t({ shape })} />
+              onChange={(shape) => t({ shape })} lockKey="topload.shape" />
             <Select label="Construction" value={params.topload.construction}
               options={[["hollow", "hollow"], ["solid", "solid"]]}
               onChange={(construction) => t({ construction })} />
@@ -246,7 +246,7 @@ export default function ParamPanel() {
           <Section title="Primary coil" tips={TIPS.primary}>
             <Select label="Geometry" value={params.primary.type}
               options={[["spiral", "flat spiral"], ["cone", "conical"], ["helix", "helical"]]}
-              onChange={(type) => pr({ type })} />
+              onChange={(type) => pr({ type })} lockKey="primary.type" />
             {params.primary.type === "cone" && (
               <Num label="Cone angle" unit="°" step={1} value={params.primary.coneAngle} onChange={(v) => pr({ coneAngle: Math.min(Math.max(v, 1), 85) })} lockKey="primary.coneAngle" />
             )}

@@ -78,6 +78,24 @@ export function activeOptVars(p: Params, locks: Record<string, boolean>): OptVar
   return vars.filter((v) => !locks[v.key]);
 }
 
+export interface CatVar {
+  key: string;
+  group: keyof Params;
+  field: string;
+  choices: string[];
+}
+
+/** Categorical design choices the optimizer may flip (lockable like any
+ *  variable). Conductor style and hollow/solid stay out — they're
+ *  electrically (near-)neutral, so flipping them is noise. */
+export function activeCatVars(locks: Record<string, boolean>): CatVar[] {
+  const cats: CatVar[] = [
+    { key: "primary.type", group: "primary", field: "type", choices: ["spiral", "cone", "helix"] },
+    { key: "topload.shape", group: "topload", field: "shape", choices: ["toroid", "sphere"] },
+  ];
+  return cats.filter((v) => !locks[v.key]);
+}
+
 const clone = (p: Params): Params => JSON.parse(JSON.stringify(p));
 
 function getVar(p: Params, v: OptVar): number {
@@ -120,10 +138,24 @@ function gauss(): number {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * Math.random());
 }
 
-export function perturb(p: Params, vars: OptVar[], temp: number): Params {
+/** One annealing move. While hot there's also a chance to flip a categorical
+ *  choice (primary geometry, topload shape); the numeric variable set is
+ *  recomputed from the candidate so e.g. cone angle becomes searchable the
+ *  moment the primary turns conical. */
+export function perturb(p: Params, locks: Record<string, boolean>, temp: number): Params {
   const out = clone(p);
+
+  const cats = activeCatVars(locks);
+  if (cats.length > 0 && Math.random() < Math.min(0.3, 0.6 * temp)) {
+    const cv = cats[Math.floor(Math.random() * cats.length)];
+    const cur = (out[cv.group] as any)[cv.field] as string;
+    const others = cv.choices.filter((c) => c !== cur);
+    (out[cv.group] as any)[cv.field] = others[Math.floor(Math.random() * others.length)];
+  }
+
+  const vars = activeOptVars(out, locks);
   const n = Math.random() < 0.35 && vars.length > 1 ? 2 : 1;
-  for (let i = 0; i < n; i++) {
+  for (let i = 0; i < n && vars.length > 0; i++) {
     const v = vars[Math.floor(Math.random() * vars.length)];
     const span = v.max - v.min;
     setVar(out, v, getVar(out, v) + gauss() * span * temp * 0.25);

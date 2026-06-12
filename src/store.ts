@@ -1,8 +1,8 @@
 import { create } from "zustand";
-import type { ComponentId, OptInfo, Params, SimResult, ViewMode } from "./types";
+import type { ComponentId, OptInfo, OptObjective, Params, SimResult, ViewMode } from "./types";
 import { computeDerived } from "./physics/formulas";
 import { simulate } from "./physics/simulate";
-import { OPT_ITERS, activeOptVars, objective, perturb } from "./physics/optimize";
+import { OPT_ITERS, accepts, activeOptVars, evaluate, perturb, temperature } from "./physics/optimize";
 
 export const DEFAULT_PARAMS: Params = {
   secondary: { turns: 1000, height: 0.5, radius: 0.05, wireDiameter: 0.0004, material: "copper" },
@@ -40,8 +40,10 @@ interface Store {
   running: boolean;
   optimizing: boolean;
   optInfo: OptInfo | null;
+  optObjective: OptObjective;
 
   setParam: <K extends keyof Params>(group: K, patch: Partial<Params[K]>) => void;
+  setOptObjective: (o: OptObjective) => void;
   toggleLock: (key: string) => void;
   setHovered: (id: ComponentId | null) => void;
   setSelected: (id: ComponentId | null) => void;
@@ -66,9 +68,11 @@ export const useStore = create<Store>((set, get) => ({
   running: false,
   optimizing: false,
   optInfo: null,
+  optObjective: "voltage",
 
   setParam: (group, patch) =>
     set((s) => ({ params: { ...s.params, [group]: { ...s.params[group], ...patch } } })),
+  setOptObjective: (optObjective) => set({ optObjective }),
   toggleLock: (key) => set((s) => ({ locks: { ...s.locks, [key]: !s.locks[key] } })),
   setHovered: (hovered) => set({ hovered }),
   setSelected: (selected) => set({ selected }),
@@ -87,36 +91,43 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   startOptimize: async () => {
-    const { optimizing, locks } = get();
+    const { optimizing, locks, optObjective: objective } = get();
     if (optimizing) return;
     const vars = activeOptVars(get().params, locks);
     if (vars.length === 0) {
-      set({ optInfo: { iter: 0, total: 0, bestVs: 0, startVs: 0, improved: 0, varCount: 0 } });
+      set({ optInfo: { iter: 0, total: 0, best: 0, start: 0, improved: 0, varCount: 0, objective } });
       return;
     }
 
-    let best: Params = JSON.parse(JSON.stringify(get().params));
-    let bestScore = objective(best);
-    const startVs = bestScore;
+    // Metropolis walk: `current` may wander downhill while hot (that's the
+    // point), `best` only ever improves and is what gets applied.
+    let current: Params = JSON.parse(JSON.stringify(get().params));
+    let curScore = evaluate(current, objective);
+    let best = current, bestScore = curScore;
+    const start = curScore;
     let improved = 0;
     set({
       optimizing: true,
-      optInfo: { iter: 0, total: OPT_ITERS, bestVs: bestScore, startVs, improved, varCount: vars.length },
+      optInfo: { iter: 0, total: OPT_ITERS, best: bestScore, start, improved, varCount: vars.length, objective },
     });
 
     for (let i = 0; i < OPT_ITERS; i++) {
       if (!get().optimizing) break;
-      const temp = 0.35 * (1 - i / OPT_ITERS) + 0.03;
-      const cand = perturb(best, vars, temp);
-      const score = objective(cand);
+      const temp = temperature(i);
+      const cand = perturb(current, vars, temp);
+      const score = evaluate(cand, objective);
+      if (accepts(curScore, score, temp)) {
+        current = cand;
+        curScore = score;
+      }
       if (score > bestScore) {
         best = cand;
         bestScore = score;
         improved++;
-        // Live-apply improvements so the 3D model morphs as the search runs.
+        // Live-apply new bests so the 3D model morphs as the search runs.
         set({ params: JSON.parse(JSON.stringify(best)) });
       }
-      set({ optInfo: { iter: i + 1, total: OPT_ITERS, bestVs: bestScore, startVs, improved, varCount: vars.length } });
+      set({ optInfo: { iter: i + 1, total: OPT_ITERS, best: bestScore, start, improved, varCount: vars.length, objective } });
       if (i % 4 === 3) await new Promise((r) => setTimeout(r, 0)); // keep the UI alive
     }
 

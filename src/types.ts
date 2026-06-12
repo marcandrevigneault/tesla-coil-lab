@@ -88,11 +88,14 @@ export interface SimQuality {
   durationOverride?: number; // s
 }
 
+export type OptObjective = "voltage" | "energy" | "efficiency";
+
 export interface OptInfo {
   iter: number;
   total: number;
-  bestVs: number; // V, best peak topload voltage found
-  startVs: number;
-  improved: number; // count of accepted improvements
+  best: number; // best score in the objective's units (V, J, or ratio)
+  start: number;
+  improved: number; // count of new bests
   varCount: number;
+  objective: OptObjective;
 }

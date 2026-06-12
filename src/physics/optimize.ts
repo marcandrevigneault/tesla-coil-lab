@@ -1,13 +1,26 @@
-import type { Params } from "../types";
+import type { OptObjective, Params } from "../types";
 import { computeDerived } from "./formulas";
 import { simulate } from "./simulate";
 
 /**
  * Parameter search: simulated annealing over every unlocked numeric variable.
  *
- * Objective = peak topload voltage from a fast, low-resolution run of the
- * same RK4 model the Run button uses (so tuning, coupling and losses are all
- * accounted for — a detuned candidate scores poorly on its own).
+ * Selectable objectives, all evaluated with a fast low-resolution run of the
+ * same RK4 model the Run button uses (so tuning, coupling and losses are
+ * always priced in — a detuned candidate scores poorly on its own):
+ *
+ *   voltage    — peak topload voltage V̂s. Loves small toploads.
+ *   energy     — ½·Cs·V̂s², the charge actually parked on the topload; the
+ *                best proxy for streamer length. Wants topload AND voltage.
+ *   efficiency — ½CsV̂s² / ½CpV₀², fraction of the bang that arrived.
+ *
+ * They are linked by V̂s² = η·V₀²·(Cp/Cs) but pull geometry in different
+ * directions — pick the one that matches what you're building for.
+ *
+ * The walk is true Metropolis annealing: while hot it accepts WORSE
+ * candidates with probability exp(Δrel/T), and the temperature reheats in
+ * cycles, so repeated runs can cross valleys instead of polishing the same
+ * local optimum every time.
  *
  * Hard constraints: the spark-gap firing voltage can never exceed the HV
  * supply voltage (a capacitor charges at most to its source), and every
@@ -83,7 +96,7 @@ function enforceConstraints(p: Params): void {
   p.topload.minorDiameter = Math.min(p.topload.minorDiameter, 0.45 * p.topload.majorDiameter);
 }
 
-export function objective(p: Params): number {
+export function evaluate(p: Params, objective: OptObjective): number {
   enforceConstraints(p);
   const d = computeDerived(p);
   // Overcoupled coils flash over between windings long before the model's
@@ -93,7 +106,12 @@ export function objective(p: Params): number {
     p.drive.topology === "solid-state"
       ? { ptsPerPeriod: 80, maxSteps: 60_000, durationOverride: Math.min(p.drive.onTime + 150e-6, 1 / p.drive.interrupterHz) }
       : { ptsPerPeriod: 90, maxSteps: 60_000, durationOverride: Math.min(p.drive.duration, 80e-6) };
-  return simulate(p, d, quick).peakVs;
+  const Vs = simulate(p, d, quick).peakVs;
+  if (objective === "voltage") return Vs;
+  const toploadEnergy = 0.5 * d.Cs * Vs * Vs;
+  if (objective === "energy") return toploadEnergy;
+  const v0 = p.drive.topology === "spark-gap" ? p.drive.firingVoltage : p.drive.busVoltage;
+  return toploadEnergy / (0.5 * p.drive.tankCapacitance * v0 * v0);
 }
 
 // Box–Muller, good enough for a perturbation kernel.
@@ -114,4 +132,21 @@ export function perturb(p: Params, vars: OptVar[], temp: number): Params {
   return out;
 }
 
-export const OPT_ITERS = 240;
+export const OPT_ITERS = 300;
+export const OPT_REHEATS = 3; // temperature sawtooth cycles per run
+
+/** Annealing temperature with periodic reheating. */
+export function temperature(iter: number): number {
+  const cycle = OPT_ITERS / OPT_REHEATS;
+  const tProg = (iter % cycle) / cycle;
+  return 0.45 * (1 - tProg) + 0.04;
+}
+
+/** Metropolis: always take improvements; take regressions with a
+ *  temperature-scaled probability so the walk can leave local optima. */
+export function accepts(curScore: number, candScore: number, temp: number): boolean {
+  if (candScore >= curScore) return true;
+  if (!isFinite(candScore)) return false;
+  const dRel = (candScore - curScore) / Math.max(Math.abs(curScore), 1e-12);
+  return Math.random() < Math.exp(dRel / (0.5 * temp));
+}

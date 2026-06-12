@@ -114,15 +114,31 @@ function Section({ title, tips, children }: { title: string; tips?: string[]; ch
   );
 }
 
+const OBJECTIVE_HINT: Record<string, string> = {
+  voltage: "Chases the highest topload voltage — favors small toploads that ring up hard.",
+  energy: "Maximizes ½CsV̂² parked on the topload — the best proxy for streamer length.",
+  efficiency: "Maximizes the fraction of each bang that reaches the topload, regardless of scale.",
+};
+
+function fmtScore(v: number, objective: string): string {
+  if (objective === "voltage") return fmt.si(v, "V");
+  if (objective === "energy") return fmt.si(v, "J");
+  return `${(v * 100).toFixed(0)}%`;
+}
+
 function OptimizeBox() {
-  const { optimizing, optInfo, startOptimize, stopOptimize, locks, params } = useStore();
+  const { optimizing, optInfo, startOptimize, stopOptimize, locks, params, optObjective, setOptObjective } = useStore();
   const lockedCount = Object.values(locks).filter(Boolean).length;
   return (
     <div className="mt-3 p-2.5 rounded-lg" style={{ background: "var(--panel-2)" }}>
       <div className="section-title mb-1.5">Optimizer</div>
+      <Select label="Goal" value={optObjective}
+        options={[["voltage", "peak voltage V̂"], ["energy", "arc energy ½CsV̂²"], ["efficiency", "transfer η"]]}
+        onChange={setOptObjective} />
       <Hint>
-        Maximizes simulated peak topload voltage by annealing every <b>unlocked</b> variable
-        ({lockedCount} locked). Firing voltage is capped at the {fmt.si(params.drive.supplyVoltage, "V")} supply.
+        {OBJECTIVE_HINT[optObjective]} Anneals every <b>unlocked</b> variable ({lockedCount} locked),
+        accepting bad moves while hot so reruns can escape the previous optimum. Firing voltage stays
+        capped at the {fmt.si(params.drive.supplyVoltage, "V")} supply.
       </Hint>
       {optimizing ? (
         <>
@@ -131,7 +147,9 @@ function OptimizeBox() {
           </div>
           <div className="mono text-[11px] mt-1.5 flex justify-between" style={{ color: "var(--muted)" }}>
             <span>{optInfo?.iter}/{optInfo?.total}</span>
-            <span style={{ color: "var(--corona)" }}>best V̂ {fmt.si(optInfo?.bestVs ?? 0, "V")}</span>
+            <span style={{ color: "var(--corona)" }}>
+              best {fmtScore(optInfo?.best ?? 0, optInfo?.objective ?? "voltage")}
+            </span>
             <span>+{optInfo?.improved}</span>
           </div>
           <button className="btn w-full mt-2" onClick={stopOptimize}>Stop</button>
@@ -143,7 +161,8 @@ function OptimizeBox() {
           </button>
           {optInfo && optInfo.total > 0 && (
             <div className="mono text-[11px] mt-1.5" style={{ color: "var(--muted)" }}>
-              done · V̂ {fmt.si(optInfo.startVs, "V")} → <span style={{ color: "var(--arc)" }}>{fmt.si(optInfo.bestVs, "V")}</span>
+              done · {fmtScore(optInfo.start, optInfo.objective)} →{" "}
+              <span style={{ color: "var(--arc)" }}>{fmtScore(optInfo.best, optInfo.objective)}</span>
               {" "}({optInfo.improved} improvements, {optInfo.varCount} free vars)
             </div>
           )}

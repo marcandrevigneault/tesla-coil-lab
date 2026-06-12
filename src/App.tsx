@@ -1,10 +1,57 @@
-import { Component, type ReactNode } from "react";
+import { Component, useRef, useState, type ReactNode } from "react";
 import ParamPanel from "./components/ParamPanel";
 import Scene3D from "./components/Scene3D";
 import SelectionCard from "./components/SelectionCard";
 import SimBar from "./components/SimBar";
 import SystemView from "./components/SystemView";
 import { useStore } from "./store";
+import { downloadModel, parseModel } from "./persist";
+
+function ModelButtons() {
+  const { params, locks, optObjective, loadModel } = useStore();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const onFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const model = parseModel(await file.text());
+      loadModel(model.params, model.locks, model.optObjective);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load that file.");
+      setTimeout(() => setError(null), 4000);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {error && (
+        <span className="mono text-[11px]" style={{ color: "var(--warn)" }}>{error}</span>
+      )}
+      <button
+        className="btn btn-ghost"
+        title="Download the current model (parameters, locks, optimizer goal) as JSON"
+        onClick={() => downloadModel(params, locks, optObjective)}
+      >
+        ↓ Save
+      </button>
+      <button className="btn btn-ghost" title="Load a saved model file" onClick={() => fileRef.current?.click()}>
+        ↑ Load
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={(e) => {
+          onFile(e.target.files?.[0]);
+          e.target.value = ""; // allow re-loading the same file
+        }}
+      />
+    </div>
+  );
+}
 
 function TopBar() {
   const view = useStore((s) => s.view);
@@ -20,7 +67,9 @@ function TopBar() {
           dual-resonator workbench
         </span>
       </h1>
-      <nav className="ml-auto flex gap-1.5">
+      <nav className="ml-auto flex items-center gap-1.5">
+        <ModelButtons />
+        <span className="mx-1" style={{ borderLeft: "1px solid var(--line)", height: 20 }} />
         <button className={`btn ${view === "3d" ? "active" : "btn-ghost"}`} onClick={() => setView("3d")}>
           3D view
         </button>

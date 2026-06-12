@@ -56,6 +56,7 @@ interface Store {
   runSimulation: () => void;
   startOptimize: () => void;
   stopOptimize: () => void;
+  loadModel: (params: Params, locks: Record<string, boolean>, optObjective: OptObjective) => void;
   reset: () => void;
 }
 
@@ -162,6 +163,9 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   stopOptimize: () => set({ optimizing: false }),
+
+  loadModel: (params, locks, optObjective) =>
+    set({ params, locks, optObjective, sim: null, selected: null, optInfo: null, optimizing: false }),
 
   reset: () => set({ params: DEFAULT_PARAMS, locks: { ...DEFAULT_LOCKS }, sim: null, selected: null, optInfo: null }),
 }));

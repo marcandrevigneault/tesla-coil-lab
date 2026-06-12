@@ -49,12 +49,38 @@ body {
 }
 
 /* ---------- inputs ---------- */
+/* label | input | lock — the lock column collapses to a spacer when absent */
 .field {
   display: grid;
-  grid-template-columns: 1fr 86px;
+  grid-template-columns: 1fr 86px 16px;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   padding: 4px 0;
+}
+.card .field {
+  grid-template-columns: 1fr 96px;
+}
+
+/* per-variable optimizer lock, sits inline right of its input */
+.lock {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  height: 22px;
+  opacity: 0.55;
+  padding: 0;
+  width: 16px;
+}
+.lock:hover {
+  opacity: 1;
+  color: var(--corona);
+}
+.lock.locked {
+  color: var(--copper);
+  opacity: 1;
 }
 .field label {
   color: var(--muted);
@@ -122,6 +148,61 @@ input[type="range"] {
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: 0 0 0 1px rgba(157, 123, 255, 0.25), 0 8px 30px rgba(0, 0, 0, 0.45);
+}
+
+/* ---------- optimizer progress ---------- */
+.opt-track {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  height: 8px;
+  overflow: hidden;
+}
+.opt-fill {
+  background: linear-gradient(90deg, var(--copper), var(--corona));
+  height: 100%;
+  transition: width 80ms linear;
+}
+
+/* ---------- on-screen piano (solid-state / MIDI mode) ---------- */
+.pkey {
+  border: 1px solid var(--line);
+  cursor: pointer;
+  padding: 0;
+  position: absolute;
+  top: 0;
+}
+.pkey.white {
+  background: #e7e4dc;
+  border-radius: 0 0 4px 4px;
+  height: 56px;
+  z-index: 1;
+}
+.pkey.white span {
+  bottom: 2px;
+  color: #555;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  left: 0;
+  position: absolute;
+  right: 0;
+  text-align: center;
+}
+.pkey.black {
+  background: #1a1d23;
+  border-radius: 0 0 3px 3px;
+  height: 34px;
+  width: 16px;
+  z-index: 2;
+}
+.pkey.white.down {
+  background: var(--corona);
+}
+.pkey.black.down {
+  background: var(--corona);
+}
+.pkey:hover {
+  border-color: var(--corona);
 }
 
 /* ---------- scrollbars ---------- */

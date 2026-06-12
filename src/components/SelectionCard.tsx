@@ -29,29 +29,69 @@ export default function SelectionCard() {
       </div>
 
       {selected === "topload" && (
-        <div className="field">
-          <label>Shape</label>
-          <select
-            value={params.topload.shape}
-            onChange={(e) => setParam("topload", { shape: e.target.value as any })}
-          >
-            <option value="toroid">toroid</option>
-            <option value="sphere">sphere</option>
-          </select>
-        </div>
+        <>
+          <div className="field">
+            <label>Shape</label>
+            <select
+              value={params.topload.shape}
+              onChange={(e) => setParam("topload", { shape: e.target.value as any })}
+            >
+              <option value="toroid">toroid</option>
+              <option value="sphere">sphere</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Construction</label>
+            <select
+              value={params.topload.construction}
+              onChange={(e) => setParam("topload", { construction: e.target.value as any })}
+            >
+              <option value="hollow">hollow</option>
+              <option value="solid">solid</option>
+            </select>
+          </div>
+        </>
       )}
 
       {selected === "primary" && (
-        <div className="field">
-          <label>Geometry</label>
-          <select
-            value={params.primary.type}
-            onChange={(e) => setParam("primary", { type: e.target.value as any })}
-          >
-            <option value="spiral">flat spiral</option>
-            <option value="helix">helical</option>
-          </select>
-        </div>
+        <>
+          <div className="field">
+            <label>Geometry</label>
+            <select
+              value={params.primary.type}
+              onChange={(e) => setParam("primary", { type: e.target.value as any })}
+            >
+              <option value="spiral">flat spiral</option>
+              <option value="cone">conical</option>
+              <option value="helix">helical</option>
+            </select>
+          </div>
+          {params.primary.type === "cone" && (
+            <div className="field">
+              <label>Cone angle [°]</label>
+              <input
+                type="number"
+                value={params.primary.coneAngle}
+                min={1}
+                max={85}
+                onChange={(e) => {
+                  const v = parseFloat(e.target.value);
+                  if (isFinite(v)) setParam("primary", { coneAngle: Math.min(Math.max(v, 1), 85) });
+                }}
+              />
+            </div>
+          )}
+          <div className="field">
+            <label>Conductor</label>
+            <select
+              value={params.primary.conductorStyle}
+              onChange={(e) => setParam("primary", { conductorStyle: e.target.value as any })}
+            >
+              <option value="tube">copper tubing</option>
+              <option value="wire">solid wire</option>
+            </select>
+          </div>
+        </>
       )}
 
       <div className="field">

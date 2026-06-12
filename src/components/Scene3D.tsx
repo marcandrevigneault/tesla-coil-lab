@@ -24,6 +24,18 @@ class FlatSpiral extends THREE.Curve<THREE.Vector3> {
     return target.set(r * Math.cos(a), 0, r * Math.sin(a));
   }
 }
+/** Inverse cone ("saucer") primary: each turn climbs the cone surface,
+ *  moving outward by pitch·cosθ and upward by pitch·sinθ. */
+class ConeSpiral extends THREE.Curve<THREE.Vector3> {
+  constructor(private r0: number, private pitch: number, private turns: number, private angleDeg: number) { super(); }
+  getPoint(t: number, target = new THREE.Vector3()) {
+    const a = 2 * Math.PI * this.turns * t;
+    const th = (this.angleDeg * Math.PI) / 180;
+    const s = this.pitch * this.turns * t; // distance along the slope
+    const r = this.r0 + s * Math.cos(th);
+    return target.set(r * Math.cos(a), s * Math.sin(th), r * Math.sin(a));
+  }
+}
 
 /* ---------- hover/select wrapper ---------- */
 function usePickable(id: ComponentId) {
@@ -96,9 +108,11 @@ function Primary() {
     const curve =
       p.type === "spiral"
         ? new FlatSpiral(p.innerRadius, p.pitch, p.turns)
-        : new Helix(p.innerRadius, p.pitch * p.turns, p.turns);
+        : p.type === "helix"
+          ? new Helix(p.innerRadius, p.pitch * p.turns, p.turns)
+          : new ConeSpiral(p.innerRadius, p.pitch, p.turns, p.coneAngle);
     return new THREE.TubeGeometry(curve, p.turns * 48, p.conductorDiameter / 2, 10, false);
-  }, [p.type, p.innerRadius, p.pitch, p.turns, p.conductorDiameter]);
+  }, [p.type, p.innerRadius, p.pitch, p.turns, p.conductorDiameter, p.coneAngle]);
 
   return (
     <mesh geometry={geom} position={[0, 0.02, 0]} {...handlers}>

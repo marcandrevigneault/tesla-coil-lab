@@ -3,7 +3,8 @@ import {
   CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { useStore } from "../store";
-import { computeDerived, fmt } from "../physics/formulas";
+import { computeDerived, fmt, sparkEstimates } from "../physics/formulas";
+import MidiPanel from "./MidiPanel";
 
 function Scope({
   title, data, series,
@@ -44,6 +45,7 @@ function Scope({
 export default function SimBar() {
   const { sim, running, runSimulation, bottomOpen, toggleBottom, params } = useStore();
   const d = computeDerived(params);
+  const solidState = params.drive.topology === "solid-state";
 
   const data = useMemo(() => {
     if (!sim) return [];
@@ -56,16 +58,34 @@ export default function SimBar() {
     }));
   }, [sim]);
 
+  const spark = useMemo(() => {
+    if (!sim) return null;
+    // Power for the repetitive-bang (Freau) estimate: wall-plug supply power
+    // for a spark gap; energy actually pumped into Cs per burst × rate for SS.
+    const powerW = solidState
+      ? 0.5 * d.Cs * sim.peakVs ** 2 * params.drive.interrupterHz
+      : d.supplyPower;
+    return sparkEstimates(sim.peakVs, powerW);
+  }, [sim, solidState, d.Cs, d.supplyPower, params.drive.interrupterHz]);
+
+  const efficiency = sim && !solidState
+    ? (0.5 * d.Cs * sim.peakVs ** 2) / (0.5 * params.drive.tankCapacitance * params.drive.firingVoltage ** 2)
+    : null;
+
+  const expandedH = solidState ? 320 : 252;
+
   return (
     <section
       className="panel shrink-0 flex flex-col transition-[height] duration-200 overflow-hidden"
-      style={{ height: bottomOpen ? 252 : 40, borderLeft: "none", borderRight: "none", borderBottom: "none" }}
+      style={{ height: bottomOpen ? expandedH : 40, borderLeft: "none", borderRight: "none", borderBottom: "none" }}
     >
       <div className="flex items-center gap-3 px-3 h-10 shrink-0">
         <button className="btn btn-ghost !px-2 !py-0.5 mono" onClick={toggleBottom}>
           {bottomOpen ? "▾" : "▴"}
         </button>
-        <div className="section-title">Simulation · single bang</div>
+        <div className="section-title">
+          {solidState ? "Simulation · interrupter bursts" : "Simulation · single bang"}
+        </div>
         <button className="btn btn-run" onClick={runSimulation} disabled={running}>
           {running ? "Solving…" : "▶ Run"}
         </button>
@@ -73,13 +93,24 @@ export default function SimBar() {
           <div className="mono text-[11.5px] flex gap-4" style={{ color: "var(--muted)" }}>
             <span>V̂ topload <b style={{ color: "var(--corona)" }}>{fmt.si(sim.peakVs, "V")}</b></span>
             <span>Î primary <b style={{ color: "var(--copper)" }}>{fmt.si(sim.peakIp, "A")}</b></span>
-            <span>RK4 steps {sim.steps.toLocaleString()}</span>
+            {efficiency !== null && (
+              <span>η transfer <b style={{ color: "var(--arc)" }}>{(efficiency * 100).toFixed(0)}%</b></span>
+            )}
+            {spark && (
+              <span title="Single-shot streamer from peak voltage (~7 kV/cm) · repetitive growth, Freau 1.7·√P. Both ±50%.">
+                arc ≈ <b style={{ color: "var(--warn)" }}>{fmt.cm(spark.singleCm)}</b>
+                {" "}single · <b style={{ color: "var(--warn)" }}>{fmt.cm(spark.freauCm)}</b> sustained
+              </span>
+            )}
           </div>
         )}
         <div className="mono text-[11.5px] ml-auto" style={{ color: "var(--muted)" }}>
           f₁ {fmt.si(d.fPrimary, "Hz")} · f₂ {fmt.si(d.fSecondary, "Hz")} · k {params.drive.coupling}
+          {solidState && <> · int {params.drive.interrupterHz.toFixed(0)} Hz</>}
         </div>
       </div>
+
+      {bottomOpen && solidState && <MidiPanel />}
 
       {bottomOpen && (
         <div className="flex gap-4 px-3 pb-2 grow min-h-0">
@@ -89,7 +120,7 @@ export default function SimBar() {
                 title="Voltages [kV]"
                 data={data}
                 series={[
-                  { key: "Vp", name: "V tank cap", color: "#d08a4e" },
+                  { key: "Vp", name: solidState ? "V series cap" : "V tank cap", color: "#d08a4e" },
                   { key: "Vs", name: "V topload", color: "#9d7bff" },
                 ]}
               />
@@ -104,8 +135,9 @@ export default function SimBar() {
             </>
           ) : (
             <div className="grid place-items-center w-full text-[12.5px]" style={{ color: "var(--muted)" }}>
-              Press Run to discharge the tank capacitor through the spark gap and watch the
-              energy beat into the secondary.
+              {solidState
+                ? "Press Run — or play a note — to fire interrupter bursts through the H-bridge and watch the secondary ring up."
+                : "Press Run to discharge the tank capacitor through the spark gap and watch the energy beat into the secondary."}
             </div>
           )}
         </div>

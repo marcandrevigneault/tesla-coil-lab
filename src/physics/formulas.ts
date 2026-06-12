@@ -1,4 +1,4 @@
-import type { Derived, Material, Params } from "../types";
+import type { ConductorStyle, Derived, Material, Params } from "../types";
 
 /**
  * Geometry -> lumped element values.
@@ -8,6 +8,10 @@ import type { Derived, Material, Params } from "../types";
  *
  *   Single-layer solenoid:  L[µH] = r² N² / (9 r + 10 l)          (r = radius, l = length, inches)
  *   Flat (Archimedean) spiral: L[µH] = a² N² / (8 a + 11 w)       (a = mean radius, w = winding depth)
+ *   Inverse cone: the usual coiler hybrid — compute the helix and spiral
+ *   inductances of the projected geometry and combine by cone angle θ:
+ *       L = √[ (L_helix sinθ)² + (L_spiral cosθ)² ]
+ *   (θ = 0 reduces to the flat spiral, θ = 90° to the helix.)
  *
  * Secondary self-capacitance: Medhurst (1947):
  *   C[pF] = D_cm · ( 0.1126 l/D + 0.08 + 0.27 √(D/l) )
@@ -17,6 +21,9 @@ import type { Derived, Material, Params } from "../types";
  *   C[pF] = 2.8 (1.2781 − d2/d1) √( π (d1 − d2) d2 / 4 )
  *
  * Sphere: exact isolated-sphere result C = 4πε0 R.
+ *
+ * Hollow vs solid toploads have identical capacitance — the charge sits on
+ * the outer surface either way. What changes is the mass, computed below.
  */
 
 const M_TO_IN = 39.3700787;
@@ -27,6 +34,12 @@ export const RESISTIVITY: Record<Material, number> = {
   silver: 1.59e-8,
   copper: 1.68e-8,
   aluminum: 2.65e-8,
+};
+
+export const DENSITY: Record<Material, number> = {
+  silver: 10_490,
+  copper: 8_960,
+  aluminum: 2_700,
 };
 
 export const MATERIAL_COLOR: Record<Material, string> = {
@@ -51,6 +64,22 @@ export function spiralInductance(innerRadiusM: number, pitchM: number, N: number
   return LuH * 1e-6;
 }
 
+export function coneInductance(
+  innerRadiusM: number,
+  pitchM: number,
+  N: number,
+  angleDeg: number
+): number {
+  const th = (angleDeg * Math.PI) / 180;
+  const slope = pitchM * N; // winding extent along the cone surface
+  const radial = slope * Math.cos(th);
+  const height = Math.max(slope * Math.sin(th), 1e-4);
+  const aMean = innerRadiusM + radial / 2;
+  const Lh = solenoidInductance(aMean, height, N);
+  const Lsp = spiralInductance(innerRadiusM, Math.max(pitchM * Math.cos(th), 1e-5), N);
+  return Math.hypot(Lh * Math.sin(th), Lsp * Math.cos(th));
+}
+
 export function medhurstSelfCapacitance(radiusM: number, lengthM: number): number {
   const Dcm = 2 * radiusM * 100;
   const ratio = lengthM / (2 * radiusM); // l/D
@@ -69,6 +98,25 @@ export function sphereCapacitance(diameterM: number): number {
   return 4 * Math.PI * EPS0 * (diameterM / 2);
 }
 
+export function toploadMass(p: Params["topload"]): number {
+  const rho = DENSITY[p.material];
+  if (p.shape === "sphere") {
+    const r = p.sphereDiameter / 2;
+    if (p.construction === "solid") return rho * (4 / 3) * Math.PI * r ** 3;
+    const w = Math.min(p.wallThickness, r);
+    return rho * ((4 / 3) * Math.PI * (r ** 3 - (r - w) ** 3));
+  }
+  const rMinor = p.minorDiameter / 2;
+  const rMajor = Math.max((p.majorDiameter - p.minorDiameter) / 2, rMinor);
+  if (p.construction === "solid") return rho * 2 * Math.PI ** 2 * rMajor * rMinor ** 2;
+  const w = Math.min(p.wallThickness, rMinor);
+  return rho * 2 * Math.PI ** 2 * rMajor * (rMinor ** 2 - (rMinor - w) ** 2);
+}
+
+export function skinDepth(rho: number, freqHz: number): number {
+  return Math.sqrt((2 * rho) / (2 * Math.PI * Math.max(freqHz, 1) * MU0));
+}
+
 /** AC resistance with first-order skin-effect correction.
  *  δ = √(2ρ / ωµ0);  for d ≫ δ:  R_AC/R_DC ≈ d/(4δ) + 0.25  (round wire). */
 export function wireResistanceAC(
@@ -80,9 +128,43 @@ export function wireResistanceAC(
   const area = Math.PI * (wireDiameterM / 2) ** 2;
   const Rdc = (rho * lengthM) / area;
   if (freqHz <= 0) return Rdc;
-  const delta = Math.sqrt((2 * rho) / (2 * Math.PI * freqHz * MU0));
+  const delta = skinDepth(rho, freqHz);
   const factor = Math.max(1, wireDiameterM / (4 * delta) + 0.25);
   return Rdc * factor;
+}
+
+/** Solid wire vs hollow tubing. At RF the current crowds into one skin depth
+ *  at the outer surface, so a tube with wall ≥ δ has the same AC resistance
+ *  as solid stock — the inside is dead metal. Only a wall thinner than δ
+ *  raises R (it is then DC-area limited). */
+export function conductorResistanceAC(
+  rho: number,
+  lengthM: number,
+  diameterM: number,
+  freqHz: number,
+  style: ConductorStyle,
+  tubeWallM: number
+): number {
+  const Rsolid = wireResistanceAC(rho, lengthM, diameterM, freqHz);
+  if (style === "wire") return Rsolid;
+  const r = diameterM / 2;
+  const w = Math.min(Math.max(tubeWallM, 1e-5), r);
+  const annulus = Math.PI * (r ** 2 - (r - w) ** 2);
+  const RdcTube = (rho * lengthM) / annulus;
+  return Math.max(Rsolid, RdcTube);
+}
+
+/** Discharge-length estimates, both very rough (±50%):
+ *  - single-shot streamer from one bang's peak topload voltage, using the
+ *    coiler rule of thumb ~7 kV/cm of streamer growth for an isolated bang;
+ *  - John Freau's repetitive-bang formula L[in] = 1.7 √P[W] (≈ 4.32 √P in cm),
+ *    which describes hot, repeatedly re-struck channels at full supply power.
+ */
+export function sparkEstimates(peakVsV: number, powerW: number) {
+  return {
+    singleCm: peakVsV / 7_000,
+    freauCm: 4.32 * Math.sqrt(Math.max(powerW, 0)),
+  };
 }
 
 export function computeDerived(p: Params): Derived {
@@ -96,10 +178,13 @@ export function computeDerived(p: Params): Derived {
       : sphereCapacitance(p.topload.sphereDiameter);
   const Cs = Cself + Ctop;
 
+  const pr = p.primary;
   const Lp =
-    p.primary.type === "spiral"
-      ? spiralInductance(p.primary.innerRadius, p.primary.pitch, p.primary.turns)
-      : solenoidInductance(p.primary.innerRadius, p.primary.pitch * p.primary.turns, p.primary.turns);
+    pr.type === "spiral"
+      ? spiralInductance(pr.innerRadius, pr.pitch, pr.turns)
+      : pr.type === "helix"
+        ? solenoidInductance(pr.innerRadius, pr.pitch * pr.turns, pr.turns)
+        : coneInductance(pr.innerRadius, pr.pitch, pr.turns, pr.coneAngle);
 
   const fSecondary = 1 / (2 * Math.PI * Math.sqrt(Ls * Cs));
   const fPrimary = 1 / (2 * Math.PI * Math.sqrt(Lp * p.drive.tankCapacitance));
@@ -107,15 +192,37 @@ export function computeDerived(p: Params): Derived {
   const wireLength = s.turns * 2 * Math.PI * s.radius;
   const Rs = wireResistanceAC(RESISTIVITY[s.material], wireLength, s.wireDiameter, fSecondary);
 
-  const primLen =
-    p.primary.turns * 2 * Math.PI * (p.primary.innerRadius + (p.primary.pitch * p.primary.turns) / 2);
+  const radialExtent =
+    pr.type === "helix"
+      ? 0
+      : pr.pitch * pr.turns * (pr.type === "cone" ? Math.cos((pr.coneAngle * Math.PI) / 180) : 1);
+  const primLen = pr.turns * 2 * Math.PI * (pr.innerRadius + radialExtent / 2);
   const Rp =
     p.drive.gapResistance +
-    wireResistanceAC(RESISTIVITY[p.primary.material], primLen, p.primary.conductorDiameter, fPrimary);
+    conductorResistanceAC(
+      RESISTIVITY[pr.material],
+      primLen,
+      pr.conductorDiameter,
+      fPrimary,
+      pr.conductorStyle,
+      pr.tubeWall
+    );
 
   const M = p.drive.coupling * Math.sqrt(Lp * Ls);
 
-  return { Lp, Ls, Cs, CselfPF: Cself * 1e12, CtopPF: Ctop * 1e12, Rp, Rs, M, fPrimary, fSecondary, wireLength };
+  const supplyPower = p.drive.supplyVoltage * p.drive.supplyCurrent;
+  const bangEnergy = 0.5 * p.drive.tankCapacitance * p.drive.firingVoltage ** 2;
+  const maxBps = bangEnergy > 0 ? supplyPower / bangEnergy : 0;
+
+  return {
+    Lp, Ls, Cs,
+    CselfPF: Cself * 1e12,
+    CtopPF: Ctop * 1e12,
+    Rp, Rs, M, fPrimary, fSecondary, wireLength,
+    toploadMassKg: toploadMass(p.topload),
+    supplyPower,
+    maxBps,
+  };
 }
 
 /* ---------- formatting helpers ---------- */
@@ -133,5 +240,8 @@ export const fmt = {
       }
     }
     return `${v} ${unit}`;
+  },
+  cm(v: number): string {
+    return v >= 100 ? `${(v / 100).toFixed(2)} m` : `${v.toFixed(0)} cm`;
   },
 };

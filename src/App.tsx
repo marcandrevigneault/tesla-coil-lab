@@ -1,3 +1,4 @@
+import { Component, type ReactNode } from "react";
 import ParamPanel from "./components/ParamPanel";
 import Scene3D from "./components/Scene3D";
 import SelectionCard from "./components/SelectionCard";
@@ -31,6 +32,24 @@ function TopBar() {
   );
 }
 
+/** The whole tree shouldn't die if WebGL is unavailable (headless, old GPU, …). */
+class CanvasBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    if (this.state.failed) {
+      return (
+        <div className="grid place-items-center h-full text-[13px]" style={{ color: "var(--muted)" }}>
+          3D view unavailable — WebGL could not start. The System view and simulations still work.
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const view = useStore((s) => s.view);
   const hovered = useStore((s) => s.hovered);
@@ -39,26 +58,31 @@ export default function App() {
       <TopBar />
       <div className="flex grow min-h-0">
         <ParamPanel />
-        <main className="relative grow min-w-0">
-          {view === "3d" ? (
-            <>
-              <Scene3D />
-              <SelectionCard />
-              {hovered && (
-                <div
-                  className="absolute bottom-3 left-3 mono text-[11px] px-2 py-1 rounded"
-                  style={{ background: "var(--panel)", border: "1px solid var(--line)", color: "var(--corona)" }}
-                >
-                  {hovered} — click to edit
-                </div>
-              )}
-            </>
-          ) : (
-            <SystemView />
-          )}
-        </main>
+        {/* viewport + sim bar live right of the parameter panel, so the bar never covers it */}
+        <div className="flex flex-col grow min-w-0">
+          <main className="relative grow min-h-0">
+            {view === "3d" ? (
+              <>
+                <CanvasBoundary>
+                  <Scene3D />
+                </CanvasBoundary>
+                <SelectionCard />
+                {hovered && (
+                  <div
+                    className="absolute bottom-3 left-3 mono text-[11px] px-2 py-1 rounded"
+                    style={{ background: "var(--panel)", border: "1px solid var(--line)", color: "var(--corona)" }}
+                  >
+                    {hovered} — click to edit
+                  </div>
+                )}
+              </>
+            ) : (
+              <SystemView />
+            )}
+          </main>
+          <SimBar />
+        </div>
       </div>
-      <SimBar />
     </div>
   );
 }

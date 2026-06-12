@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useStore } from "../store";
 import { computeDerived, fmt, skinDepth, RESISTIVITY } from "../physics/formulas";
+import { secondaryLadder } from "../physics/ladder";
 import { InfoButton, TipBox } from "./InfoTip";
 import { TIPS } from "../tips";
 import type { Material, Params } from "../types";
@@ -299,6 +300,7 @@ export default function ParamPanel() {
                   ["Mutual M", fmt.si(d.M, "H")],
                   ["Coupling k (geom)", d.k.toFixed(3)],
                   ["Wire ℓ vs λ/4", `${d.wireLength.toFixed(0)} / ${(299792458 / d.fSecondary / 4).toFixed(0)} m`],
+                  ["¾λ overtone (dist.)", fmt.si(secondaryLadder(d).fOvertone, "Hz")],
                   ["Topload mass", d.toploadMassKg >= 1 ? `${d.toploadMassKg.toFixed(2)} kg` : `${(d.toploadMassKg * 1000).toFixed(0)} g`],
                 ].map(([k, v]) => (
                   <tr key={k as string}>

@@ -4,7 +4,8 @@ import { Canvas, useFrame, type ThreeEvent } from "@react-three/fiber";
 import { Grid, OrbitControls } from "@react-three/drei";
 import { useStore } from "../store";
 import type { ComponentId } from "../types";
-import { MATERIAL_COLOR } from "../physics/formulas";
+import { MATERIAL_COLOR, computeDerived } from "../physics/formulas";
+import { profileVoltageAt, secondaryLadder } from "../physics/ladder";
 
 const CORONA = new THREE.Color("#9d7bff");
 
@@ -73,18 +74,37 @@ function Glow({ state, color }: { state: string; color: string }) {
 
 /* ---------- components ---------- */
 function Secondary() {
-  const p = useStore((s) => s.params.secondary);
+  const params = useStore((s) => s.params);
+  const p = params.secondary;
   const { state, handlers } = usePickable("secondary");
 
-  // Stylized winding: cap the rendered turns, geometry stays light.
+  // Stylized winding (capped turn count) with the distributed-ladder mode
+  // voltage baked into vertex colors: copper at the grounded base, corona
+  // purple at the top — the λ/4 standing wave painted on the coil itself.
   const winding = useMemo(() => {
     const turns = Math.min(p.turns, 64);
     const curve = new Helix(p.radius * 1.01, p.height, turns);
     const tube = Math.min(p.height / (turns * 2.6), p.radius * 0.05);
-    return new THREE.TubeGeometry(curve, turns * 24, tube, 6, false);
-  }, [p.radius, p.height, p.turns]);
+    const geom = new THREE.TubeGeometry(curve, turns * 24, tube, 6, false);
 
-  const color = MATERIAL_COLOR[p.material];
+    const { profile } = secondaryLadder(computeDerived(params));
+    const cBase = new THREE.Color(MATERIAL_COLOR[p.material]);
+    const cHot = CORONA;
+    const pos = geom.attributes.position;
+    const colors = new Float32Array(pos.count * 3);
+    const c = new THREE.Color();
+    for (let i = 0; i < pos.count; i++) {
+      const v = profileVoltageAt(profile, pos.getY(i) / p.height);
+      c.copy(cBase).lerp(cHot, v * 0.85);
+      colors[i * 3] = c.r;
+      colors[i * 3 + 1] = c.g;
+      colors[i * 3 + 2] = c.b;
+    }
+    geom.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    return geom;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params]);
+
   return (
     <group {...handlers}>
       {/* coil form */}
@@ -93,7 +113,14 @@ function Secondary() {
         <meshStandardMaterial color="#3a3f47" metalness={0.1} roughness={0.85} />
       </mesh>
       <mesh geometry={winding}>
-        <Glow state={state} color={color} />
+        <meshStandardMaterial
+          vertexColors
+          color="#ffffff"
+          metalness={0.85}
+          roughness={0.32}
+          emissive={state === "idle" ? "#000000" : CORONA}
+          emissiveIntensity={state === "selected" ? 0.6 : state === "hovered" ? 0.25 : 0}
+        />
       </mesh>
     </group>
   );

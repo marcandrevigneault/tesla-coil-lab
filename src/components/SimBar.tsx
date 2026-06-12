@@ -4,14 +4,17 @@ import {
 } from "recharts";
 import { useStore } from "../store";
 import { computeDerived, fmt, sparkEstimates } from "../physics/formulas";
+import { secondaryLadder } from "../physics/ladder";
 import MidiPanel from "./MidiPanel";
 
 function Scope({
-  title, data, series,
+  title, data, series, xKey = "t", xLabel = "t [µs]",
 }: {
   title: string;
   data: Record<string, number>[];
   series: { key: string; name: string; color: string }[];
+  xKey?: string;
+  xLabel?: string;
 }) {
   return (
     <div className="flex-1 min-w-0">
@@ -20,16 +23,16 @@ function Scope({
         <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
           <CartesianGrid stroke="#232932" strokeDasharray="2 4" />
           <XAxis
-            dataKey="t"
+            dataKey={xKey}
             stroke="#8b93a1"
             tick={{ fontSize: 10, fontFamily: "JetBrains Mono" }}
             tickFormatter={(v) => `${v.toFixed(0)}`}
-            label={{ value: "t [µs]", position: "insideBottomRight", offset: -2, fontSize: 10, fill: "#8b93a1" }}
+            label={{ value: xLabel, position: "insideBottomRight", offset: -2, fontSize: 10, fill: "#8b93a1" }}
           />
           <YAxis stroke="#8b93a1" tick={{ fontSize: 10, fontFamily: "JetBrains Mono" }} width={52} />
           <Tooltip
             contentStyle={{ background: "#171b22", border: "1px solid #2a3038", fontFamily: "JetBrains Mono", fontSize: 11 }}
-            labelFormatter={(v) => `t = ${Number(v).toFixed(2)} µs`}
+            labelFormatter={(v) => `${xLabel.split(" ")[0]} = ${Number(v).toFixed(2)}`}
           />
           <Legend wrapperStyle={{ fontSize: 11 }} />
           {series.map((s) => (
@@ -57,6 +60,18 @@ export default function SimBar() {
       Is: sim.Is[i],
     }));
   }, [sim]);
+
+  // Standing-wave profile from the distributed ladder, scaled to the bang's
+  // peak — V(x) along the winding at the moment the topload tops out.
+  const profileData = useMemo(() => {
+    if (!sim) return [];
+    const { profile } = secondaryLadder(d);
+    return profile.map((pt) => ({
+      h: pt.x * params.secondary.height * 100, // cm above the base
+      V: (pt.v * sim.peakVs) / 1e3, // kV
+      I: pt.i, // normalized current
+    }));
+  }, [sim, d, params.secondary.height]);
 
   const spark = useMemo(() => {
     if (!sim) return null;
@@ -130,6 +145,15 @@ export default function SimBar() {
                 series={[
                   { key: "Ip", name: "I primary", color: "#e8b14e" },
                   { key: "Is", name: "I secondary", color: "#5fd4e6" },
+                ]}
+              />
+              <Scope
+                title="V along secondary [kV] · λ/4 profile"
+                data={profileData}
+                xKey="h"
+                xLabel="height [cm]"
+                series={[
+                  { key: "V", name: "V(x) at peak", color: "#9d7bff" },
                 ]}
               />
             </>
